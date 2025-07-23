@@ -9,8 +9,9 @@ import (
 	"github.com/google/uuid"
 )
 
-func GenerateAccessToken(userID uuid.UUID) (string, error) {
+func GenerateAccessToken(tokPairID uuid.UUID, userID uuid.UUID) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS512, jwt.MapClaims{
+		"tkp": tokPairID.String(),
 		"sub": userID.String(),
 		"exp": time.Now().Add(time.Minute * 15).Unix(),
 		"iat": time.Now().Unix(),
@@ -24,7 +25,7 @@ func GenerateAccessToken(userID uuid.UUID) (string, error) {
 	return tokenString, nil
 }
 
-func ParseAccessToken(tokenString string) (uuid.UUID, error) {
+func ParseAccessToken(tokenString string) (uuid.UUID, uuid.UUID, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
@@ -33,22 +34,32 @@ func ParseAccessToken(tokenString string) (uuid.UUID, error) {
 	})
 
 	if err != nil {
-		return uuid.UUID{}, err
+		return uuid.UUID{}, uuid.UUID{}, err
 	}
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
 		sub, ok := claims["sub"].(string)
 		if !ok {
-			return uuid.UUID{}, fmt.Errorf("sub claim is not a string")
+			return uuid.UUID{}, uuid.UUID{}, fmt.Errorf("sub claim is not a string")
+		}
+
+		tkp, ok := claims["tkp"].(string)
+		if !ok {
+			return uuid.UUID{}, uuid.UUID{}, fmt.Errorf("tkp claim is not a string")
 		}
 
 		userID, err := uuid.Parse(sub)
 		if err != nil {
-			return uuid.UUID{}, fmt.Errorf("invalid UUID in sub claim: %w", err)
+			return uuid.UUID{}, uuid.UUID{}, fmt.Errorf("invalid UUID in sub claim: %w", err)
 		}
 
-		return userID, nil
+		tokPairID, err := uuid.Parse(tkp)
+		if err != nil {
+			return uuid.UUID{}, uuid.UUID{}, fmt.Errorf("invalid UUID in tkp claim: %w", err)
+		}
+
+		return tokPairID, userID, nil
 	}
 
-	return uuid.UUID{}, fmt.Errorf("invalid token")
+	return uuid.UUID{}, uuid.UUID{}, fmt.Errorf("invalid token")
 }

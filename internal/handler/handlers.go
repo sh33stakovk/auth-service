@@ -21,23 +21,24 @@ func GetTokens(c *gin.Context) {
 		return
 	}
 
-	accessToken, err := token.GenerateAccessToken(userID)
+	tokPairID, refreshToken, refreshHash, err := token.GenerateRefreshToken()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	refreshToken, refreshHash, err := token.GenerateRefreshToken()
+	accessToken, err := token.GenerateAccessToken(tokPairID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	err = repository.DB.Create(&model.RefreshToken{
-		UserID:    userID,
-		TokenHash: refreshHash,
-		UserAgent: c.Request.UserAgent(),
-		IP:        c.ClientIP(),
+		UserID:           userID,
+		RefreshTokenHash: refreshHash,
+		UserAgent:        c.Request.UserAgent(),
+		IP:               c.ClientIP(),
+		TokenPairID:      tokPairID,
 	}).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -47,6 +48,7 @@ func GetTokens(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
+		"token_pair_id": tokPairID.String(),
 	})
 }
 
@@ -77,7 +79,7 @@ func RefreshTokens(c *gin.Context) {
 	reqIP := c.ClientIP()
 
 	accessToken := strings.TrimPrefix(authHeader, "Bearer ")
-	accUserID, err := token.ParseAccessToken(accessToken)
+	tokPairID, accUserID, err := token.ParseAccessToken(accessToken)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -93,7 +95,7 @@ func RefreshTokens(c *gin.Context) {
 		IP        string
 	}{}
 
-	err = repository.DB.Where("user_id = ? AND token_hash = ? AND expired = ?", req.UserID, req.RefreshToken, false).
+	err = repository.DB.Where("user_id = ? AND token_hash = ? AND token_pair_id = ? AND expired = ?", req.UserID, req.RefreshToken, tokPairID, false).
 		Select("user_agent", "ip").
 		Scan(&prevParams).
 		Error
