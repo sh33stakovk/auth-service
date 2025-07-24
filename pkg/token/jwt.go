@@ -106,13 +106,13 @@ func ParseJWT(tokenString string, isRefresh bool) (TokenData, error) {
 
 	if errors.Is(err, jwt.ErrTokenExpired) {
 		if isRefresh {
-			err = repository.DeleteToken(tokenData.TokenPairUUID)
-			if err != nil {
-				return TokenData{}, err
+			delErr := repository.DeleteToken(tokenData.TokenPairUUID)
+			if delErr != nil {
+				return TokenData{}, delErr
 			}
 		}
 
-		return TokenData{}, fmt.Errorf("token expired")
+		return TokenData{}, jwt.ErrTokenExpired
 	}
 
 	if !token.Valid {
