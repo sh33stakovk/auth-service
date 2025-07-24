@@ -1,6 +1,8 @@
 package main
 
 import (
+	handler "auth-service/internal/handlers"
+	"auth-service/internal/middleware"
 	"auth-service/internal/repository"
 	"log"
 	"os"
@@ -19,6 +21,16 @@ func main() {
 	log.Println("connected to database")
 
 	r := gin.Default()
+
+	r.GET("/get-tokens", handler.GetTokens)
+
+	authGroup := r.Group("/")
+	authGroup.Use(middleware.AuthMiddleware())
+
+	authGroup.GET("/user-uiid", handler.GetUUID)
+	authGroup.PUT("/refresh", handler.RefreshTokens)
+	authGroup.DELETE("/deauthorize", handler.Deauthorize)
+	authGroup.GET("/webhook", handler.Webhook)
 
 	port := os.Getenv("PORT")
 

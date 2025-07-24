@@ -9,13 +9,21 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
+
+var webhookURL = os.Getenv("WEBHOOK_URL")
+
+type WebhookPayload struct {
+	UserUUID string `json:"user_uuid"`
+	OldIP    string `json:"old_ip"`
+	NewIP    string `json:"new_ip"`
+	Message  string `json:"message"`
+}
 
 func createTokenPair(tokenData token.TokenData, c *gin.Context) {
 	refreshToken, err := token.GenerateJWT(tokenData, true)
@@ -82,23 +90,29 @@ func GetTokens(c *gin.Context) {
 	createTokenPair(tokenData, c)
 }
 
-func GetUUID(c *gin.Context) {
-	authHeader := c.GetHeader("Authorization")
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing access token"})
-		return
+func getTokenData(key string, c *gin.Context) (token.TokenData, error) {
+	contextData, exists := c.Get(key)
+	if !exists {
+		return token.TokenData{}, fmt.Errorf("missing token data")
 	}
 
-	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+	tokenData, ok := contextData.(token.TokenData)
+	if !ok {
+		return token.TokenData{}, fmt.Errorf("cannot get access token data")
+	}
 
-	tokenData, err := token.ParseJWT(tokenString, false)
+	return tokenData, nil
+}
+
+func GetUUID(c *gin.Context) {
+	accessTokenData, err := getTokenData("access_token_data", c)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"user_uuid": tokenData.UserUUID,
+		"user_uuid": accessTokenData.UserUUID,
 	})
 }
 
@@ -131,62 +145,36 @@ func sendWebhook(url string, payload any) error {
 }
 
 func RefreshTokens(c *gin.Context) {
-	refreshToken, err := c.Cookie("refresh_token")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing refresh_token"})
-		return
-	}
-
-	tokenData, err := token.ParseJWT(refreshToken, true)
+	refreshTokenData, err := getTokenData("refresh_token_data", c)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		return
-	}
-
-	var refreshTokenHash string
-	err = repository.DB.Model(&model.RefreshToken{}).
-		Where("token_pair_uuid = ?", tokenData.TokenPairUUID).
-		Select("refresh_token_hash").
-		Scan(&refreshTokenHash).
-		Error
-	if err == gorm.ErrRecordNotFound {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh_token"})
-		return
-	} else if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	err = bcrypt.CompareHashAndPassword([]byte(refreshTokenHash), []byte(refreshToken))
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh_token"})
 		return
 	}
 
 	reqUserAgent := c.Request.UserAgent()
 	reqIP := c.ClientIP()
 
-	if tokenData.UserAgent != reqUserAgent {
+	if refreshTokenData.UserAgent != reqUserAgent {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user_agent was changed"})
 		return
 	}
 
-	if tokenData.IP != reqIP {
-		payload := map[string]string{
-			"user_uuid": tokenData.UserUUID.String(),
-			"old_ip":    tokenData.IP,
-			"new_ip":    reqIP,
-			"message":   "ip changed",
+	if refreshTokenData.IP != reqIP {
+		payload := WebhookPayload{
+			UserUUID: refreshTokenData.UserUUID.String(),
+			OldIP:    refreshTokenData.IP,
+			NewIP:    reqIP,
+			Message:  "ip changed",
 		}
 
-		err = sendWebhook("http://localhost:8081/webhook", payload)
+		err = sendWebhook(webhookURL, payload)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 	}
 
-	err = repository.DeleteToken(tokenData.TokenPairUUID)
+	err = repository.DeleteToken(refreshTokenData.TokenPairUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -194,10 +182,38 @@ func RefreshTokens(c *gin.Context) {
 
 	newTokenData := token.TokenData{
 		TokenPairUUID: uuid.New(),
-		UserUUID:      tokenData.UserUUID,
+		UserUUID:      refreshTokenData.UserUUID,
 		UserAgent:     reqUserAgent,
 		IP:            reqIP,
 	}
 
 	createTokenPair(newTokenData, c)
+}
+
+func Deauthorize(c *gin.Context) {
+	accessTokenData, err := getTokenData("access_token_data", c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = repository.DeleteToken(accessTokenData.TokenPairUUID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "deauthorized"})
+}
+
+func Webhook(c *gin.Context) {
+	var payload WebhookPayload
+
+	err := c.ShouldBindJSON(&payload)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "received"})
 }
