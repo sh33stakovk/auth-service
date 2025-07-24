@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 
@@ -23,23 +24,20 @@ type WebhookPayload struct {
 	Message  string `json:"message"`
 }
 
-func createTokenPair(tokenData token.TokenData, c *gin.Context) {
+func createTokenPair(tokenData token.TokenData, c *gin.Context) error {
 	refreshToken, err := token.GenerateJWT(tokenData, true)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return err
 	}
 
 	accessToken, err := token.GenerateJWT(tokenData, false)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return err
 	}
 
 	refreshTokenHash, err := token.HashToken(refreshToken)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return err
 	}
 
 	err = repository.DB.Create(&model.RefreshToken{
@@ -47,8 +45,7 @@ func createTokenPair(tokenData token.TokenData, c *gin.Context) {
 		RefreshTokenHash: string(refreshTokenHash),
 	}).Error
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return err
 	}
 
 	c.SetCookie(
@@ -64,6 +61,8 @@ func createTokenPair(tokenData token.TokenData, c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": accessToken,
 	})
+
+	return nil
 }
 
 func GetTokens(c *gin.Context) {
@@ -85,7 +84,10 @@ func GetTokens(c *gin.Context) {
 		IP:            ip,
 	}
 
-	createTokenPair(tokenData, c)
+	if err = createTokenPair(tokenData, c); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 }
 
 func getTokenData(key string, c *gin.Context) (token.TokenData, error) {
@@ -182,7 +184,7 @@ func RefreshTokens(c *gin.Context) {
 	}
 
 	if accessTokenData.TokenPairUUID != refreshTokenData.TokenPairUUID {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid acces_token"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid access_token"})
 		return
 	}
 
@@ -208,8 +210,7 @@ func RefreshTokens(c *gin.Context) {
 
 		err = sendWebhook(os.Getenv("WEBHOOK_URL"), payload)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+			log.Printf("webhook error: %v", err)
 		}
 	}
 
@@ -226,7 +227,10 @@ func RefreshTokens(c *gin.Context) {
 		IP:            reqIP,
 	}
 
-	createTokenPair(newTokenData, c)
+	if err = createTokenPair(newTokenData, c); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 }
 
 func Deauthorize(c *gin.Context) {

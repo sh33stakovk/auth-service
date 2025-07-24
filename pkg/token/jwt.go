@@ -14,16 +14,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var (
-	refreshSecret = []byte(os.Getenv("REFRESH"))
-	accessSecret  = []byte(os.Getenv("ACCESS"))
-)
-
 func getJWTSecretAndExpiry(isRefresh bool) (secretKey []byte, expiresAt int64) {
 	if isRefresh {
-		return refreshSecret, time.Now().Add(time.Hour * 24 * 7).Unix()
+		return []byte(os.Getenv("REFRESH")), time.Now().Add(time.Hour * 24 * 7).Unix()
 	} else {
-		return accessSecret, time.Now().Add(time.Minute * 15).Unix()
+		return []byte(os.Getenv("ACCESS")), time.Now().Add(time.Minute * 15).Unix()
 	}
 }
 

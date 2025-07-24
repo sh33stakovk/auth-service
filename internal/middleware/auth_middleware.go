@@ -28,9 +28,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		err = repository.DB.First(&model.RefreshToken{}).
-			Where("token_pair_uuid = ?", accessTokenData.TokenPairUUID).
-			Error
+		err = repository.DB.Where("token_pair_uuid = ?", accessTokenData.TokenPairUUID).First(&model.RefreshToken{}).Error
 		if err == gorm.ErrRecordNotFound {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid access_token"})
 			return

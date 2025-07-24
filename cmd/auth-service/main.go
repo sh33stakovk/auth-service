@@ -1,7 +1,7 @@
 package main
 
 import (
-	handler "auth-service/internal/handlers"
+	"auth-service/internal/handler"
 	"auth-service/internal/middleware"
 	"auth-service/internal/repository"
 	"log"
