@@ -1,11 +1,14 @@
 package middleware
 
 import (
+	"auth-service/internal/model"
+	"auth-service/internal/repository"
 	"auth-service/pkg/token"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func AuthMiddleware() gin.HandlerFunc {
@@ -21,6 +24,14 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		accessTokenData, err := token.ParseJWT(accessToken, false)
 		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid access_token"})
+			return
+		}
+
+		err = repository.DB.First(&model.RefreshToken{}).
+			Where("token_pair_uuid = ?", accessTokenData.TokenPairUUID).
+			Error
+		if err == gorm.ErrRecordNotFound {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid access_token"})
 			return
 		}

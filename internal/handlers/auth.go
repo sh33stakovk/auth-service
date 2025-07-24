@@ -16,8 +16,6 @@ import (
 	"gorm.io/gorm"
 )
 
-var webhookURL = os.Getenv("WEBHOOK_URL")
-
 type WebhookPayload struct {
 	UserUUID string `json:"user_uuid"`
 	OldIP    string `json:"old_ip"`
@@ -208,7 +206,7 @@ func RefreshTokens(c *gin.Context) {
 			Message:  "ip changed",
 		}
 
-		err = sendWebhook(webhookURL, payload)
+		err = sendWebhook(os.Getenv("WEBHOOK_URL"), payload)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

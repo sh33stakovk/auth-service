@@ -23,6 +23,7 @@ func main() {
 	r := gin.Default()
 
 	r.GET("/get-tokens", handler.GetTokens)
+	r.POST("/webhook", handler.Webhook)
 
 	authGroup := r.Group("/")
 	authGroup.Use(middleware.AuthMiddleware())
@@ -30,7 +31,6 @@ func main() {
 	authGroup.GET("/user-uuid", handler.GetUUID)
 	authGroup.PUT("/refresh", handler.RefreshTokens)
 	authGroup.DELETE("/deauthorize", handler.Deauthorize)
-	authGroup.GET("/webhook", handler.Webhook)
 
 	port := os.Getenv("PORT")
 
