@@ -4,6 +4,7 @@ import (
 	"auth-service/internal/model"
 	"log"
 	"os"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -21,9 +22,19 @@ func InitDB() {
 		" sslmode=disable"
 
 	var err error
-	DB, err = gorm.Open(postgres.Open(conStr))
-	if err != nil {
-		log.Fatalf("unable to connect to database: %v", err.Error())
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		DB, err = gorm.Open(postgres.Open(conStr))
+		if err == nil {
+			break
+		}
+
+		log.Printf("failed to connect to database, attempt: %v/%v", i, maxRetries)
+		time.Sleep(time.Second * 2)
+	}
+
+	if DB == nil {
+		log.Fatal("unable to connect to database")
 	}
 
 	err = DB.AutoMigrate(&model.RefreshToken{})
