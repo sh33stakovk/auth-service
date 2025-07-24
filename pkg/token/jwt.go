@@ -2,6 +2,8 @@ package token
 
 import (
 	"auth-service/internal/repository"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +11,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -120,4 +123,19 @@ func ParseJWT(tokenString string, isRefresh bool) (TokenData, error) {
 	}
 
 	return tokenData, nil
+}
+
+func hashTokenSHA256(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func HashToken(token string) ([]byte, error) {
+	shaToken := hashTokenSHA256(token)
+	return bcrypt.GenerateFromPassword([]byte(shaToken), bcrypt.DefaultCost)
+}
+
+func CompareToken(hashed []byte, token string) error {
+	shaToken := hashTokenSHA256(token)
+	return bcrypt.CompareHashAndPassword(hashed, []byte(shaToken))
 }

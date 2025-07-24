@@ -13,7 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 var webhookURL = os.Getenv("WEBHOOK_URL")
@@ -38,7 +38,7 @@ func createTokenPair(tokenData token.TokenData, c *gin.Context) {
 		return
 	}
 
-	refreshTokenHash, err := bcrypt.GenerateFromPassword([]byte(refreshToken), bcrypt.DefaultCost)
+	refreshTokenHash, err := token.HashToken(refreshToken)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -145,9 +145,46 @@ func sendWebhook(url string, payload any) error {
 }
 
 func RefreshTokens(c *gin.Context) {
-	refreshTokenData, err := getTokenData("refresh_token_data", c)
+	refreshToken, err := c.Cookie("refresh_token")
 	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing refresh_token"})
+		return
+	}
+
+	refreshTokenData, err := token.ParseJWT(refreshToken, true)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh_token"})
+		return
+	}
+
+	var refreshTokenHash string
+	err = repository.DB.Model(&model.RefreshToken{}).
+		Where("token_pair_uuid = ?", refreshTokenData.TokenPairUUID).
+		Select("refresh_token_hash").
+		Scan(&refreshTokenHash).
+		Error
+	if err == gorm.ErrRecordNotFound {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh_token"})
+		return
+	} else if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = token.CompareToken([]byte(refreshTokenHash), refreshToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh_token"})
+		return
+	}
+
+	accessTokenData, err := getTokenData("access_token_data", c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if accessTokenData.TokenPairUUID != refreshTokenData.TokenPairUUID {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid acces_token"})
 		return
 	}
 
@@ -155,6 +192,10 @@ func RefreshTokens(c *gin.Context) {
 	reqIP := c.ClientIP()
 
 	if refreshTokenData.UserAgent != reqUserAgent {
+		err = repository.DeleteToken(refreshTokenData.TokenPairUUID)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user_agent was changed"})
 		return
 	}

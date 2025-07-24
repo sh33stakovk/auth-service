@@ -5,6 +5,6 @@ import (
 )
 
 type RefreshToken struct {
-	TokenPairUUID    uuid.UUID `gorm:"type:uuid,not null,unique"`
+	TokenPairUUID    uuid.UUID `gorm:"type:uuid;not null;unique"`
 	RefreshTokenHash string    `gorm:"not null"`
 }

@@ -25,6 +25,11 @@ func InitDB() {
 	if err != nil {
 		log.Fatalf("unable to connect to database: %v", err.Error())
 	}
+
+	err = DB.AutoMigrate(&model.RefreshToken{})
+	if err != nil {
+		log.Fatalf("unable to migrate to database: %v", err.Error())
+	}
 }
 
 func DeleteToken(tokenPairUUID uuid.UUID) error {

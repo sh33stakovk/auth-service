@@ -18,7 +18,7 @@ func main() {
 	log.Println("godotenv loaded")
 
 	repository.InitDB()
-	log.Println("connected to database")
+	log.Println("connected and migrated to database")
 
 	r := gin.Default()
 
@@ -27,7 +27,7 @@ func main() {
 	authGroup := r.Group("/")
 	authGroup.Use(middleware.AuthMiddleware())
 
-	authGroup.GET("/user-uiid", handler.GetUUID)
+	authGroup.GET("/user-uuid", handler.GetUUID)
 	authGroup.PUT("/refresh", handler.RefreshTokens)
 	authGroup.DELETE("/deauthorize", handler.Deauthorize)
 	authGroup.GET("/webhook", handler.Webhook)
