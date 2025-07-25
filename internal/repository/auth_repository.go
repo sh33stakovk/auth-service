@@ -23,6 +23,8 @@ func InitDB() {
 
 	var err error
 	maxRetries := 10
+
+	// Делаем несколько попыток подключения к Postgres, так как сервис postgres в docker-compose не сразу открывает подключение
 	for i := 0; i < maxRetries; i++ {
 		DB, err = gorm.Open(postgres.Open(conStr))
 		if err == nil {

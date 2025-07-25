@@ -1,0 +1,197 @@
+definitions:
+  swagger.AccessTokenFailure:
+    properties:
+      error:
+        example: invalid access_token
+        type: string
+    type: object
+  swagger.AccessTokenSuccess:
+    properties:
+      access_token:
+        example: '{access_token}'
+        type: string
+    type: object
+  swagger.DeauthorizeSuccess:
+    properties:
+      message:
+        example: deauthorized
+        type: string
+    type: object
+  swagger.GetTokensFailure400:
+    properties:
+      error:
+        example: invalid user_uuid
+        type: string
+    type: object
+  swagger.GetTokensFailure401:
+    properties:
+      error:
+        example: failed to generate/save tokens
+        type: string
+    type: object
+  swagger.GetUUIDSuccess:
+    properties:
+      user_uuid:
+        example: '{user_uuid}'
+        type: string
+    type: object
+  swagger.TokenDataFailure:
+    properties:
+      error:
+        example: missing token data
+        type: string
+    type: object
+  swagger.WebhookFailure:
+    properties:
+      error:
+        example: JSON binding error
+        type: string
+    type: object
+  swagger.WebhookPayload:
+    properties:
+      message:
+        example: ip changed
+        type: string
+      new_ip:
+        example: 192.168.1.2
+        type: string
+      old_ip:
+        example: 192.168.1.1
+        type: string
+      user_uuid:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
+  swagger.WebhookSuccess:
+    properties:
+      message:
+        example: received
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /deauthorize:
+    delete:
+      description: Удаляет refresh токен из БД по TokenPairUUID, полученному из access
+        токена (access токен невалиден при отсутствии refresh токена с таким же TokenPairUUID
+        в БД).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: успешная деавторизация
+          schema:
+            $ref: '#/definitions/swagger.DeauthorizeSuccess'
+        "401":
+          description: неверный access токен
+          schema:
+            $ref: '#/definitions/swagger.AccessTokenFailure'
+        "500":
+          description: ошибка получения данных токена или удаления токена из БД
+          schema:
+            $ref: '#/definitions/swagger.TokenDataFailure'
+      security:
+      - ApiKeyAuth: []
+      summary: Деавторизация
+  /get-tokens:
+    get:
+      description: Возвращает access токен в теле ответа, refresh токен устанавливается
+        в cookie и сохраняется в БД в bcrypt-хэше.
+      parameters:
+      - default: 619899ea-6aa3-44b9-9a8c-e8a68799ea09
+        description: UUID пользователя
+        in: query
+        name: user_uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: access_token успешно возвращён
+          schema:
+            $ref: '#/definitions/swagger.AccessTokenSuccess'
+        "400":
+          description: некорректный UUID пользователя
+          schema:
+            $ref: '#/definitions/swagger.GetTokensFailure400'
+        "401":
+          description: ошибка генерации или сохранения токенов
+          schema:
+            $ref: '#/definitions/swagger.GetTokensFailure401'
+      summary: Получение access и refresh токенов
+  /refresh:
+    put:
+      description: 'Получает access токен из Authorization: Bearer и refresh токен
+        из cookie. При успехе возвращает новый access токен и устанавливает новый
+        refresh токен в cookie, записывая хэш в БД и удаляя старый. Токены должны
+        быть из одной пары. При смене User-Agent происходит деавторизация, а при смене
+        IP отсылается уведомление на webhook.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: новый access токен успешно возвращён и refresh токен обновлён
+          schema:
+            $ref: '#/definitions/swagger.AccessTokenSuccess'
+        "401":
+          description: отсутствует или неверен refresh/access токен, User-Agent изменён,
+            или ошибка сравнения токенов
+          schema:
+            $ref: '#/definitions/swagger.AccessTokenFailure'
+        "500":
+          description: ошибки при удалении токена или получении данных из контекста
+          schema:
+            $ref: '#/definitions/swagger.TokenDataFailure'
+      security:
+      - ApiKeyAuth: []
+      summary: Обновление пары токенов
+  /user-uuid:
+    get:
+      description: Возвращается UUID пользователя, который берется из данных access
+        токена.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: UUID пользователя успешно возвращён
+          schema:
+            $ref: '#/definitions/swagger.GetUUIDSuccess'
+        "401":
+          description: отсутствуют или некорректны данные access токена
+          schema:
+            $ref: '#/definitions/swagger.AccessTokenFailure'
+      security:
+      - ApiKeyAuth: []
+      summary: Получение UUID пользователя
+  /webhook:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Данные вебхука
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/swagger.WebhookPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: уведомление успешно принято
+          schema:
+            $ref: '#/definitions/swagger.WebhookSuccess'
+        "400":
+          description: ошибка при разборе данных JSON
+          schema:
+            $ref: '#/definitions/swagger.WebhookFailure'
+      summary: Вебхук для уведомлений о смене IP
+securityDefinitions:
+  ApiKeyAuth:
+    description: Введите "Bearer {access_token}"
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

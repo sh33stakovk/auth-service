@@ -7,9 +7,18 @@ import (
 	"log"
 	"os"
 
+	_ "auth-service/docs"
+
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
+
+//	@securityDefinitions.apikey	ApiKeyAuth
+//	@in							header
+//	@name						Authorization
+//	@description				Введите "Bearer {access_token}"
 
 func main() {
 	if err := godotenv.Load(); err != nil {
@@ -24,6 +33,7 @@ func main() {
 
 	r.GET("/get-tokens", handler.GetTokens)
 	r.POST("/webhook", handler.Webhook)
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	authGroup := r.Group("/")
 	authGroup.Use(middleware.AuthMiddleware())

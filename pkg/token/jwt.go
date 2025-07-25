@@ -22,6 +22,11 @@ func getJWTSecretAndExpiry(isRefresh bool) (secretKey []byte, expiresAt int64) {
 	}
 }
 
+/*
+Функция для генерации access и refresh токенов
+Время жизни access токена 15 минут, а refresh токена - 7 дней
+Оба токена в формате base64, так как это дефолтный формат JWT
+*/
 func GenerateJWT(tokenData TokenData, isRefresh bool) (string, error) {
 	secretKey, expiresAt := getJWTSecretAndExpiry(isRefresh)
 
@@ -41,6 +46,7 @@ func GenerateJWT(tokenData TokenData, isRefresh bool) (string, error) {
 	return tokenString, nil
 }
 
+// Функция для сбора данных токена в структуру TokenData
 func getTokenData(claims jwt.MapClaims) (TokenData, error) {
 	var tokenData TokenData
 	var err error
@@ -78,6 +84,10 @@ func getTokenData(claims jwt.MapClaims) (TokenData, error) {
 	return tokenData, nil
 }
 
+/*
+Функция для парса токенов
+Если refresh токен просрочен, то он автоматически удаляется из БД. В случае access токена просто возвращается ошибка
+*/
 func ParseJWT(tokenString string, isRefresh bool) (TokenData, error) {
 	var tokenData TokenData
 
@@ -104,13 +114,13 @@ func ParseJWT(tokenString string, isRefresh bool) (TokenData, error) {
 
 	if errors.Is(err, jwt.ErrTokenExpired) {
 		if isRefresh {
-			delErr := repository.DeleteToken(tokenData.TokenPairUUID)
-			if delErr != nil {
-				return TokenData{}, delErr
+			err = repository.DeleteToken(tokenData.TokenPairUUID)
+			if err != nil {
+				return TokenData{}, err
 			}
 		}
 
-		return TokenData{}, jwt.ErrTokenExpired
+		return TokenData{}, err
 	}
 
 	if !token.Valid {
@@ -120,16 +130,19 @@ func ParseJWT(tokenString string, isRefresh bool) (TokenData, error) {
 	return tokenData, nil
 }
 
+// Функция для перевода токена в SHA256 перед хэшированием в bcrypt, так как bcrypt не поддерживает длину JWT токенов
 func hashTokenSHA256(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }
 
+// Функция хэширования токена
 func HashToken(token string) ([]byte, error) {
 	shaToken := hashTokenSHA256(token)
 	return bcrypt.GenerateFromPassword([]byte(shaToken), bcrypt.DefaultCost)
 }
 
+// Функция сравнения хэша с токеном
 func CompareToken(hashed []byte, token string) error {
 	shaToken := hashTokenSHA256(token)
 	return bcrypt.CompareHashAndPassword(hashed, []byte(shaToken))

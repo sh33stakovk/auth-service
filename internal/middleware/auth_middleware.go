@@ -28,6 +28,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		// Если в БД нет refresh токена с таким же TokenPairUUID, значит сессия была деавторизована
 		err = repository.DB.Where("token_pair_uuid = ?", accessTokenData.TokenPairUUID).
 			First(&model.RefreshToken{}).
 			Error

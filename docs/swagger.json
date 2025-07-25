@@ -1,0 +1,291 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "contact": {}
+    },
+    "paths": {
+        "/deauthorize": {
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Удаляет refresh токен из БД по TokenPairUUID, полученному из access токена (access токен невалиден при отсутствии refresh токена с таким же TokenPairUUID в БД).",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Деавторизация",
+                "responses": {
+                    "200": {
+                        "description": "успешная деавторизация",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.DeauthorizeSuccess"
+                        }
+                    },
+                    "401": {
+                        "description": "неверный access токен",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.AccessTokenFailure"
+                        }
+                    },
+                    "500": {
+                        "description": "ошибка получения данных токена или удаления токена из БД",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.TokenDataFailure"
+                        }
+                    }
+                }
+            }
+        },
+        "/get-tokens": {
+            "get": {
+                "description": "Возвращает access токен в теле ответа, refresh токен устанавливается в cookie и сохраняется в БД в bcrypt-хэше.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Получение access и refresh токенов",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "619899ea-6aa3-44b9-9a8c-e8a68799ea09",
+                        "description": "UUID пользователя",
+                        "name": "user_uuid",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "access_token успешно возвращён",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.AccessTokenSuccess"
+                        }
+                    },
+                    "400": {
+                        "description": "некорректный UUID пользователя",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.GetTokensFailure400"
+                        }
+                    },
+                    "401": {
+                        "description": "ошибка генерации или сохранения токенов",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.GetTokensFailure401"
+                        }
+                    }
+                }
+            }
+        },
+        "/refresh": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Получает access токен из Authorization: Bearer и refresh токен из cookie. При успехе возвращает новый access токен и устанавливает новый refresh токен в cookie, записывая хэш в БД и удаляя старый. Токены должны быть из одной пары. При смене User-Agent происходит деавторизация, а при смене IP отсылается уведомление на webhook.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Обновление пары токенов",
+                "responses": {
+                    "200": {
+                        "description": "новый access токен успешно возвращён и refresh токен обновлён",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.AccessTokenSuccess"
+                        }
+                    },
+                    "401": {
+                        "description": "отсутствует или неверен refresh/access токен, User-Agent изменён, или ошибка сравнения токенов",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.AccessTokenFailure"
+                        }
+                    },
+                    "500": {
+                        "description": "ошибки при удалении токена или получении данных из контекста",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.TokenDataFailure"
+                        }
+                    }
+                }
+            }
+        },
+        "/user-uuid": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Возвращается UUID пользователя, который берется из данных access токена.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Получение UUID пользователя",
+                "responses": {
+                    "200": {
+                        "description": "UUID пользователя успешно возвращён",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.GetUUIDSuccess"
+                        }
+                    },
+                    "401": {
+                        "description": "отсутствуют или некорректны данные access токена",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.AccessTokenFailure"
+                        }
+                    }
+                }
+            }
+        },
+        "/webhook": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Вебхук для уведомлений о смене IP",
+                "parameters": [
+                    {
+                        "description": "Данные вебхука",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/swagger.WebhookPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "уведомление успешно принято",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.WebhookSuccess"
+                        }
+                    },
+                    "400": {
+                        "description": "ошибка при разборе данных JSON",
+                        "schema": {
+                            "$ref": "#/definitions/swagger.WebhookFailure"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "swagger.AccessTokenFailure": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "invalid access_token"
+                }
+            }
+        },
+        "swagger.AccessTokenSuccess": {
+            "type": "object",
+            "properties": {
+                "access_token": {
+                    "type": "string",
+                    "example": "{access_token}"
+                }
+            }
+        },
+        "swagger.DeauthorizeSuccess": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "deauthorized"
+                }
+            }
+        },
+        "swagger.GetTokensFailure400": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "invalid user_uuid"
+                }
+            }
+        },
+        "swagger.GetTokensFailure401": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "failed to generate/save tokens"
+                }
+            }
+        },
+        "swagger.GetUUIDSuccess": {
+            "type": "object",
+            "properties": {
+                "user_uuid": {
+                    "type": "string",
+                    "example": "{user_uuid}"
+                }
+            }
+        },
+        "swagger.TokenDataFailure": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "missing token data"
+                }
+            }
+        },
+        "swagger.WebhookFailure": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "JSON binding error"
+                }
+            }
+        },
+        "swagger.WebhookPayload": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "ip changed"
+                },
+                "new_ip": {
+                    "type": "string",
+                    "example": "192.168.1.2"
+                },
+                "old_ip": {
+                    "type": "string",
+                    "example": "192.168.1.1"
+                },
+                "user_uuid": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "swagger.WebhookSuccess": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "received"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "description": "Введите \"Bearer {access_token}\"",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

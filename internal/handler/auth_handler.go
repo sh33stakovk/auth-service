@@ -3,6 +3,7 @@ package handler
 import (
 	"auth-service/internal/model"
 	"auth-service/internal/repository"
+	"auth-service/pkg/swagger"
 	"auth-service/pkg/token"
 	"bytes"
 	"encoding/json"
@@ -16,13 +17,6 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
-
-type WebhookPayload struct {
-	UserUUID string `json:"user_uuid"`
-	OldIP    string `json:"old_ip"`
-	NewIP    string `json:"new_ip"`
-	Message  string `json:"message"`
-}
 
 func createTokenPair(tokenData token.TokenData, c *gin.Context) error {
 	refreshToken, err := token.GenerateJWT(tokenData, true)
@@ -65,6 +59,14 @@ func createTokenPair(tokenData token.TokenData, c *gin.Context) error {
 	return nil
 }
 
+// @Summary		Получение access и refresh токенов
+// @Description	Возвращает access токен в теле ответа, refresh токен устанавливается в cookie и сохраняется в БД в bcrypt-хэше.
+// @Produce		json
+// @Param			user_uuid	query		string						true	"UUID пользователя"	default(619899ea-6aa3-44b9-9a8c-e8a68799ea09)
+// @Success		200			{object}	swagger.AccessTokenSuccess	"access_token успешно возвращён"
+// @Failure		400			{object}	swagger.GetTokensFailure400	"некорректный UUID пользователя"
+// @Failure		401			{object}	swagger.GetTokensFailure401	"ошибка генерации или сохранения токенов"
+// @Router			/get-tokens [get]
 func GetTokens(c *gin.Context) {
 	userUUIDStr := c.Query("user_uuid")
 	userUUID, err := uuid.Parse(userUUIDStr)
@@ -104,6 +106,13 @@ func getTokenData(key string, c *gin.Context) (token.TokenData, error) {
 	return tokenData, nil
 }
 
+// @Summary		Получение UUID пользователя
+// @Description	Возвращается UUID пользователя, который берется из данных access токена.
+// @Produce		json
+// @Security		ApiKeyAuth
+// @Success		200	{object}	swagger.GetUUIDSuccess		"UUID пользователя успешно возвращён"
+// @Failure		401	{object}	swagger.AccessTokenFailure	"отсутствуют или некорректны данные access токена"
+// @Router			/user-uuid [get]
 func GetUUID(c *gin.Context) {
 	accessTokenData, err := getTokenData("access_token_data", c)
 	if err != nil {
@@ -144,6 +153,14 @@ func sendWebhook(url string, payload any) error {
 	return nil
 }
 
+// @Summary		Обновление пары токенов
+// @Description	Получает access токен из Authorization: Bearer и refresh токен из cookie. При успехе возвращает новый access токен и устанавливает новый refresh токен в cookie, записывая хэш в БД и удаляя старый. Токены должны быть из одной пары. При смене User-Agent происходит деавторизация, а при смене IP отсылается уведомление на webhook.
+// @Produce		json
+// @Security		ApiKeyAuth
+// @Success		200	{object}	swagger.AccessTokenSuccess	"новый access токен успешно возвращён и refresh токен обновлён"
+// @Failure		401	{object}	swagger.AccessTokenFailure	"отсутствует или неверен refresh/access токен, User-Agent изменён, или ошибка сравнения токенов"
+// @Failure		500	{object}	swagger.TokenDataFailure	"ошибки при удалении токена или получении данных из контекста"
+// @Router			/refresh [put]
 func RefreshTokens(c *gin.Context) {
 	refreshToken, err := c.Cookie("refresh_token")
 	if err != nil {
@@ -201,7 +218,7 @@ func RefreshTokens(c *gin.Context) {
 	}
 
 	if refreshTokenData.IP != reqIP {
-		payload := WebhookPayload{
+		payload := swagger.WebhookPayload{
 			UserUUID: refreshTokenData.UserUUID.String(),
 			OldIP:    refreshTokenData.IP,
 			NewIP:    reqIP,
@@ -233,6 +250,14 @@ func RefreshTokens(c *gin.Context) {
 	}
 }
 
+// @Summary		Деавторизация
+// @Description	Удаляет refresh токен из БД по TokenPairUUID, полученному из access токена (access токен невалиден при отсутствии refresh токена с таким же TokenPairUUID в БД).
+// @Produce		json
+// @Security		ApiKeyAuth
+// @Success		200	{object}	swagger.DeauthorizeSuccess	"успешная деавторизация"
+// @Failure		401	{object}	swagger.AccessTokenFailure	"неверный access токен"
+// @Failure		500	{object}	swagger.TokenDataFailure	"ошибка получения данных токена или удаления токена из БД"
+// @Router			/deauthorize [delete]
 func Deauthorize(c *gin.Context) {
 	accessTokenData, err := getTokenData("access_token_data", c)
 	if err != nil {
@@ -249,8 +274,15 @@ func Deauthorize(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "deauthorized"})
 }
 
+// @Summary	Вебхук для уведомлений о смене IP
+// @Accept		json
+// @Produce	json
+// @Param		payload	body		swagger.WebhookPayload	true	"Данные вебхука"
+// @Success	200		{object}	swagger.WebhookSuccess	"уведомление успешно принято"
+// @Failure	400		{object}	swagger.WebhookFailure	"ошибка при разборе данных JSON"
+// @Router		/webhook [post]
 func Webhook(c *gin.Context) {
-	var payload WebhookPayload
+	var payload swagger.WebhookPayload
 
 	err := c.ShouldBindJSON(&payload)
 	if err != nil {
